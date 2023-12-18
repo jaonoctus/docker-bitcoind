@@ -3,14 +3,13 @@
 # VERSION of Bitcoin Core to be build
 #   NOTE: Unlike our other images this one is NOT prefixed with `v`,
 #           as many things (like download URLs) use this form instead.
-ARG VERSION=0.21.2
-
+ARG VERSION=25.1
 
 # CPU architecture to build binaries for
 ARG ARCH
 
 # Define default versions so that they don't have to be repeated throughout the file
-ARG VER_ALPINE=3.12
+ARG VER_ALPINE=3.18
 
 # $USER name, and data $DIR to be used in the `final` image
 ARG USER=bitcoind
@@ -32,19 +31,21 @@ ARG BDB_SOURCE=prebuilt
 #
 FROM alpine:${VER_ALPINE} AS preparer-base
 
-# Make sure APKs are downloaded over SSL. See: https://github.com/gliderlabs/docker-alpine/issues/184
-RUN sed -i 's|http://dl-cdn.alpinelinux.org|https://alpine.global.ssl.fastly.net|g' /etc/apk/repositories
+RUN apk add --no-cache gnupg
 
-RUN apk add --no-cache  gnupg
+# Guix Builder Keys: https://github.com/bitcoin-core/guix.sigs/tree/main/builder-keys
+# curl -s "https://api.github.com/repos/bitcoin-core/guix.sigs/contents/builder-keys" | jq -r '.[].download_url'
+ENV KEYS 982A193E3CE0EED535E09023188CBB2648416AD5 101598DC823C1B5F9A6624ABA5E0907A0380E6C3 9EDAFF80E080659604F4A76B2EBB056FD847F8A7 \
+         ED9BDF7AD6A55E232E84524257FF9BDBCC301009 A8FC55F3B04BA3146F3492E79303B33A305224CB 152812300785C96444D3334D17565732E08E5E41 \
+         0AD83877C1F0CD1EE9BD660AD7CC770B81FD22A8 C060A6635913D98A3587D7DB1C2491FFEB0EF770 590B7292695AFFA5B672CBB2E13FC145CD3F4304 \
+         948444FCE03B05BA5AB0591EC37B1C1D44C786EE E777299FC265DD04793070EB944D35F9AC3DB76A 6B002C6EA3F91B1B0DF0C9BC8F617F1200A6D25C \
+         F4FC70F07310028424EFC20A8E4256593F177720 D1DBF2C4B96F2DEBF4C16654410108112E7EA81F 287AE4CA1187C68C08B49CB2D11BD4F33F1DB499 \
+         616516B8EB6ED02882FC4A7A8ADCB558C4F33D65 71A3B16735405025D447E8F274810B012346C9A6 2F78ACF677029767C8736F13747A7AE2FB0FD25B \
+         133EAC179436F14A5CF1B794860FEB804E669320 9ED99C7A355AE46098103E74476E74C8529A9006 6A8F9C266528E25AEB1D7731C2371D91CB716EA7 \
+         28E72909F1717FE9607754F8A7BEB2621678D37D 67AA5B46E7AF78053167FE343B8F814A784218F8 79D00BAC68B56D422F945A8F8E3A8F3247DBCBBF \
+         C388F6961FB972A95678E327F62711DBDCA8AE56
 
-ENV KEYS 71A3B16735405025D447E8F274810B012346C9A6 01EA5486DE18A882D4C2684590C8019E36C2E964
-RUN timeout 16s  gpg  --keyserver keyserver.ubuntu.com  --recv-keys $KEYS
-
-# Print imported keys, but also ensure there's no other keys in the system
-RUN gpg --list-keys | tail -n +3 | tee /tmp/keys.txt && \
-    gpg --list-keys $KEYS | diff - /tmp/keys.txt
-
-
+RUN gpg --keyserver keyserver.ubuntu.com --recv-keys $KEYS
 
 #
 ## Option #1: [default] Fetch bitcoind source from release tarballs
@@ -53,23 +54,23 @@ FROM preparer-base AS preparer-release
 
 ARG VERSION
 
+# Download sigs
+ADD https://bitcoincore.org/bin/bitcoin-core-$VERSION/SHA256SUMS.asc ./
 # Download checksums
-ADD https://bitcoincore.org/bin/bitcoin-core-$VERSION/SHA256SUMS.asc  ./
+ADD https://bitcoincore.org/bin/bitcoin-core-$VERSION/SHA256SUMS ./
 
 # Download source code (intentionally different website than checksums)
-ADD https://bitcoin.org/bin/bitcoin-core-$VERSION/bitcoin-$VERSION.tar.gz ./
+ADD https://github.com/bitcoin/bitcoin/archive/refs/tags/v$VERSION.tar.gz ./bitcoin-$VERSION.tar.gz
 
 # Verify that hashes are signed with the previously imported key
-RUN gpg --verify SHA256SUMS.asc
+RUN gpg --verify SHA256SUMS.asc SHA256SUMS
 
 # Verify that downloaded source-code archive matches exactly the hash that's provided
-RUN grep " bitcoin-$VERSION.tar.gz\$" SHA256SUMS.asc | sha256sum -c -
+RUN grep "bitcoin-$VERSION.tar.gz" SHA256SUMS | sha256sum -c
 
 # Extract
 RUN tar -xzf "bitcoin-$VERSION.tar.gz" && \
-    rm  -f   "bitcoin-$VERSION.tar.gz"
-
-
+    rm -f "bitcoin-$VERSION.tar.gz"
 
 #
 ## Option #2: Fetch bitcoind source from GitHub
@@ -124,9 +125,6 @@ FROM ${ARCH:+${ARCH}/}alpine:${VER_ALPINE} AS builder
 ARG VERSION
 ARG SOURCE
 
-# Use APK repos over HTTPS. See: https://github.com/gliderlabs/docker-alpine/issues/184
-RUN sed -i 's|http://dl-cdn.alpinelinux.org|https://alpine.global.ssl.fastly.net|g' /etc/apk/repositories
-
 RUN apk add --no-cache \
         autoconf \
         automake \
@@ -170,7 +168,7 @@ RUN ./configure LDFLAGS=-L/opt/db4/lib/ CPPFLAGS=-I/opt/db4/include/ \
     --with-sqlite=yes \
     --with-daemon
 
-RUN make -j$(( $(nproc) + 1 )) check
+RUN make -j$(( $(nproc) + 1 ))
 RUN make install
 
 # List installed binaries pre-strip & strip them
@@ -197,12 +195,7 @@ ARG DIR
 
 LABEL maintainer="Damian Mee (@meeDamian)"
 
-# Use APK repos over HTTPS. See: https://github.com/gliderlabs/docker-alpine/issues/184
-RUN sed -i 's|http://dl-cdn.alpinelinux.org|https://alpine.global.ssl.fastly.net|g' /etc/apk/repositories
-
 RUN apk add --no-cache \
-        boost-filesystem \
-        boost-thread \
         libevent \
         libsodium \
         libstdc++ \
