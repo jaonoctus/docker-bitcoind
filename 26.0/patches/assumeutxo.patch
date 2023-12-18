@@ -1,0 +1,18 @@
+diff --git src/kernel/chainparams.cpp src/kernel/chainparams.cpp
+index 73ba330..5361fb5 100644
+--- src/kernel/chainparams.cpp
++++ src/kernel/chainparams.cpp
+@@ -173,7 +173,12 @@ public:
+         };
+
+         m_assumeutxo_data = {
+-            // TODO to be specified in a future patch.
++            {
++                .height = 821'568,
++                .hash_serialized = AssumeutxoHash{uint256S("0x2e5087fa9c2b4273cf737029c599cce95a72319a9316397e7b178bd8aa8b9a3b")},
++                .nChainTx = 937080645,
++                .blockhash = uint256S("0x0000000000000000000060f6ece3250589e60f8e03af49887b092eb92ae4ec7d")
++            }
+         };
+
+         chainTxData = ChainTxData{

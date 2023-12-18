@@ -150,6 +150,9 @@ COPY  --from=preparer /bitcoin-$VERSION/  ./
 
 ENV BITCOIN_PREFIX /opt/bitcoin-$VERSION
 
+# Apply assumeutxo patch
+COPY patches/assumeutxo.patch /assumeutxo.patch
+RUN patch -p0 < /assumeutxo.patch
 
 RUN ./autogen.sh
 
