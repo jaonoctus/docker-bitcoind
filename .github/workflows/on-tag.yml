@@ -19,7 +19,7 @@ on:
 jobs:
   build:
     name: Build bitcoind
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
 
     strategy:
       matrix:
@@ -29,11 +29,10 @@ jobs:
           - arm64v8
 
     env:
-      QEMU_VERSION: v5.0.0
       DOCKER_BUILDKIT: 1
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Setup environment
         run: |
@@ -62,10 +61,6 @@ jobs:
           printf "    TAG: %s\n"  "$TAG"
           printf "    DIR: %s\n"  "$DIR"
           printf "  BUILD: %s\n"  "$BUILD"
-
-      - name: Register self-compiled qemu
-        if: matrix.arch != 'amd64'
-        run: docker run --rm --privileged "meedamian/simple-qemu:$QEMU_VERSION-${{ matrix.arch }}" -p yes
 
       - name: Build ${{ env.APP }}
         run: >
@@ -121,16 +116,16 @@ jobs:
         run: sha256sum images/*
 
       - name: Upload docker image as build artifact
-        uses: actions/upload-artifact@v1.0.0
+        uses: actions/upload-artifact@v4
         with:
-          name: docker-images
+          name: docker-images-${{ matrix.arch }}
           path: images/
 
 
   deploy:
     name: Deploy to Docker Hub & Github Releases.  Only after successful build.
 
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs: build
 
     env:
@@ -146,7 +141,9 @@ jobs:
       - name: Download all build artifacts
         uses: actions/download-artifact@v4.1.7
         with:
-          name: docker-images
+          pattern: docker-images-*
+          merge-multiple: true
+          path: docker-images
 
       - name: Print sha256sum of downloaded images
         run: sha256sum docker-images/*
